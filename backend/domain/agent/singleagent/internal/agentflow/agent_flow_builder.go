@@ -93,7 +93,9 @@ func BuildAgent(ctx context.Context, conf *Config) (r *AgentRunner, err error) {
 		return nil, err
 	}
 
-	chatModel, modelInfo, err := modelbuilder.BuildModelBySettings(ctx, conf.Agent.ModelInfo)
+	// Agent turns may enter a ReAct tool loop. Moonshot K2.6 requires thinking
+	// to be disabled for these immediate Agent/tool-call chains.
+	chatModel, modelInfo, err := modelbuilder.BuildModelBySettingsWithThinking(ctx, conf.Agent.ModelInfo, false)
 	if err != nil {
 		return nil, err
 	}

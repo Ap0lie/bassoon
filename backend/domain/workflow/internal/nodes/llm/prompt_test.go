@@ -17,6 +17,7 @@
 package llm
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/bytedance/mockey"
@@ -37,6 +38,8 @@ func TestTransformMessagePart(t *testing.T) {
 			enableTransferBase64 bool
 			expectedPart         schema.ChatMessagePart
 			mockB64              bool
+			mockB64Err           bool
+			expectedErr          bool
 		}{
 			{
 				name: "Image modal not supported",
@@ -161,12 +164,79 @@ func TestTransformMessagePart(t *testing.T) {
 				},
 				mockB64: true,
 			},
+			{
+				name: "Image base64 transfer failure returns an error",
+				part: schema.ChatMessagePart{
+					Type:     schema.ChatMessagePartTypeImageURL,
+					ImageURL: &schema.ChatMessageImageURL{URL: "http://example.com/image.png"},
+				},
+				supportedModals:      &developer_api.ModelAbility{ImageUnderstanding: ptr.Of(true), SupportMultiModal: ptr.Of(true)},
+				enableTransferBase64: true,
+				mockB64Err:           true,
+				expectedErr:          true,
+			},
+			{
+				name: "Video base64 transfer failure returns an error",
+				part: schema.ChatMessagePart{
+					Type:     schema.ChatMessagePartTypeVideoURL,
+					VideoURL: &schema.ChatMessageVideoURL{URL: "http://example.com/video.mp4"},
+				},
+				supportedModals:      &developer_api.ModelAbility{VideoUnderstanding: ptr.Of(true), SupportMultiModal: ptr.Of(true)},
+				enableTransferBase64: true,
+				mockB64Err:           true,
+				expectedErr:          true,
+			},
+			{
+				name: "Data URL is preserved when base64 transfer is enabled",
+				part: schema.ChatMessagePart{
+					Type: schema.ChatMessagePartTypeImageURL,
+					ImageURL: &schema.ChatMessageImageURL{
+						URL: "data:image/png;base64,base64encodedstring",
+					},
+				},
+				supportedModals:      &developer_api.ModelAbility{ImageUnderstanding: ptr.Of(true), SupportMultiModal: ptr.Of(true)},
+				enableTransferBase64: true,
+				expectedPart: schema.ChatMessagePart{
+					Type: schema.ChatMessagePartTypeImageURL,
+					ImageURL: &schema.ChatMessageImageURL{
+						URL: "data:image/png;base64,base64encodedstring",
+					},
+				},
+			},
+			{
+				name: "Non-base64 data URL is rejected when base64 transfer is enabled",
+				part: schema.ChatMessagePart{
+					Type: schema.ChatMessagePartTypeImageURL,
+					ImageURL: &schema.ChatMessageImageURL{
+						URL: "data:image/png,not-base64",
+					},
+				},
+				supportedModals:      &developer_api.ModelAbility{ImageUnderstanding: ptr.Of(true), SupportMultiModal: ptr.Of(true)},
+				enableTransferBase64: true,
+				mockB64Err:           true,
+				expectedErr:          true,
+			},
+			{
+				name: "Moonshot file reference is preserved when base64 transfer is enabled",
+				part: schema.ChatMessagePart{
+					Type:     schema.ChatMessagePartTypeVideoURL,
+					VideoURL: &schema.ChatMessageVideoURL{URL: "ms://file-id"},
+				},
+				supportedModals:      &developer_api.ModelAbility{VideoUnderstanding: ptr.Of(true), SupportMultiModal: ptr.Of(true)},
+				enableTransferBase64: true,
+				expectedPart: schema.ChatMessagePart{
+					Type:     schema.ChatMessagePartTypeVideoURL,
+					VideoURL: &schema.ChatMessageVideoURL{URL: "ms://file-id"},
+				},
+			},
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				if tt.mockB64 {
+				if tt.mockB64 || tt.mockB64Err {
 					t.Cleanup(mockey.UnPatchAll)
+				}
+				if tt.mockB64 {
 					var u, m string
 					switch tt.part.Type {
 					case schema.ChatMessagePartTypeImageURL:
@@ -183,7 +253,16 @@ func TestTransformMessagePart(t *testing.T) {
 						MimeType:  m,
 					}, nil).Build()
 				}
-				result := transformMessagePart(tt.part, tt.supportedModals, tt.enableTransferBase64)
+				if tt.mockB64Err {
+					mockey.Mock(urltobase64url.URLToBase64).Return((*urltobase64url.FileData)(nil), errors.New("download failed")).Build()
+				}
+				result, err := transformMessagePart(tt.part, tt.supportedModals, tt.enableTransferBase64)
+				if tt.expectedErr {
+					assert.Error(t, err)
+					assert.Equal(t, schema.ChatMessagePart{}, result)
+					return
+				}
+				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedPart, result)
 			})
 		}

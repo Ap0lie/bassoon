@@ -19,6 +19,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/schema"
@@ -207,7 +208,11 @@ func (pl *promptTpl) render(ctx context.Context, vs map[string]any,
 
 		if _, ok := pl.associateUserInputFields[part.part.Value]; ok && userMessage != nil && isChatFlow {
 			for _, p := range userMessage.MultiContent {
-				multiParts = append(multiParts, transformMessagePart(p, supportedModals, enableTransferBase64))
+				transformedPart, err := transformMessagePart(p, supportedModals, enableTransferBase64)
+				if err != nil {
+					return nil, err
+				}
+				multiParts = append(multiParts, transformedPart)
 			}
 			continue
 		}
@@ -275,7 +280,11 @@ func (pl *promptTpl) render(ctx context.Context, vs map[string]any,
 				},
 			}
 		}
-		multiParts = append(multiParts, transformMessagePart(originalPart, supportedModals, enableTransferBase64))
+		transformedPart, err := transformMessagePart(originalPart, supportedModals, enableTransferBase64)
+		if err != nil {
+			return nil, err
+		}
+		multiParts = append(multiParts, transformedPart)
 	}
 
 	return &schema.Message{
@@ -284,61 +293,79 @@ func (pl *promptTpl) render(ctx context.Context, vs map[string]any,
 	}, nil
 }
 
-func transformMessagePart(part schema.ChatMessagePart, supportedModals *developer_api.ModelAbility, enableTransferBase64 bool) schema.ChatMessagePart {
+func transformMessagePart(part schema.ChatMessagePart, supportedModals *developer_api.ModelAbility, enableTransferBase64 bool) (schema.ChatMessagePart, error) {
 	switch part.Type {
 	case schema.ChatMessagePartTypeImageURL:
+		if part.ImageURL == nil {
+			return schema.ChatMessagePart{}, fmt.Errorf("image URL is required")
+		}
 		if !supportedModals.GetImageUnderstanding() {
 			return schema.ChatMessagePart{
 				Type: schema.ChatMessagePartTypeText,
 				Text: part.ImageURL.URL,
-			}
+			}, nil
 		}
 		if enableTransferBase64 {
+			if isSupportedDirectMediaReference(part.ImageURL.URL) {
+				return part, nil
+			}
 			if fileData, err := urltobase64url.URLToBase64(part.ImageURL.URL); err == nil {
 				part.ImageURL.MIMEType = fileData.MimeType
 				part.ImageURL.URL = fileData.Base64Url
 			} else {
-				logs.Errorf("transformMessagePart image url to base64 failed, url: %s, err: %v", part.ImageURL.URL, err)
-				return part
+				return schema.ChatMessagePart{}, fmt.Errorf("convert image URL to base64: %w", err)
 			}
 		}
 	case schema.ChatMessagePartTypeAudioURL:
+		if part.AudioURL == nil {
+			return schema.ChatMessagePart{}, fmt.Errorf("audio URL is required")
+		}
 		if !supportedModals.GetAudioUnderstanding() {
 			return schema.ChatMessagePart{
 				Type: schema.ChatMessagePartTypeText,
 				Text: part.AudioURL.URL,
-			}
+			}, nil
 		}
 		if enableTransferBase64 {
+			if isSupportedDirectMediaReference(part.AudioURL.URL) {
+				return part, nil
+			}
 			if fileData, err := urltobase64url.URLToBase64(part.AudioURL.URL); err == nil {
 				part.AudioURL.MIMEType = fileData.MimeType
 				part.AudioURL.URL = fileData.Base64Url
 			} else {
-				logs.Errorf("transformMessagePart audio url to base64 failed, url: %s, err: %v", part.AudioURL.URL, err)
-				return part
+				return schema.ChatMessagePart{}, fmt.Errorf("convert audio URL to base64: %w", err)
 			}
 		}
 	case schema.ChatMessagePartTypeVideoURL:
+		if part.VideoURL == nil {
+			return schema.ChatMessagePart{}, fmt.Errorf("video URL is required")
+		}
 		if !supportedModals.GetVideoUnderstanding() {
 			return schema.ChatMessagePart{
 				Type: schema.ChatMessagePartTypeText,
 				Text: part.VideoURL.URL,
-			}
+			}, nil
 		}
 		if enableTransferBase64 {
+			if isSupportedDirectMediaReference(part.VideoURL.URL) {
+				return part, nil
+			}
 			if fileData, err := urltobase64url.URLToBase64(part.VideoURL.URL); err == nil {
 				part.VideoURL.MIMEType = fileData.MimeType
 				part.VideoURL.URL = fileData.Base64Url
 			} else {
-				logs.Errorf("transformMessagePart video url to base64 failed, url: %s, err: %v", part.VideoURL.URL, err)
-				return part
+				return schema.ChatMessagePart{}, fmt.Errorf("convert video URL to base64: %w", err)
 			}
 		}
 	case schema.ChatMessagePartTypeFileURL:
+		if part.FileURL == nil {
+			return schema.ChatMessagePart{}, fmt.Errorf("file URL is required")
+		}
 		return schema.ChatMessagePart{
 			Type: schema.ChatMessagePartTypeText,
 			Text: part.FileURL.URL,
-		}
+		}, nil
 		// if enableTransferBase64 {
 		// 	if fileData, err := urltobase64url.URLToBase64(part.FileURL.URL); err == nil {
 		// 		part.FileURL.MIMEType = fileData.MimeType
@@ -349,7 +376,20 @@ func transformMessagePart(part schema.ChatMessagePart, supportedModals *develope
 		// 	}
 		// }
 	}
-	return part
+	return part, nil
+}
+
+// isSupportedDirectMediaReference reports references that Moonshot accepts without
+// downloading them first. Keep these values intact: URLToBase64 only accepts HTTP(S)
+// inputs and would otherwise reject already valid data URLs or ms file references.
+func isSupportedDirectMediaReference(url string) bool {
+	url = strings.TrimSpace(url)
+	if strings.HasPrefix(strings.ToLower(url), "data:") && strings.Contains(strings.ToLower(url), ";base64,") {
+		return true
+	}
+
+	const msFilePrefix = "ms://"
+	return strings.HasPrefix(url, msFilePrefix) && len(url) > len(msFilePrefix)
 }
 
 func (p *prompts) Format(ctx context.Context, vs map[string]any, _ ...prompt.Option) (
@@ -432,7 +472,11 @@ func (p *promptsWithChatHistory) Format(ctx context.Context, vs map[string]any, 
 
 	for _, msg := range historyMessages {
 		for i, part := range msg.MultiContent {
-			msg.MultiContent[i] = transformMessagePart(part, supportedModal, enableTransferBase64)
+			transformedPart, err := transformMessagePart(part, supportedModal, enableTransferBase64)
+			if err != nil {
+				return nil, err
+			}
+			msg.MultiContent[i] = transformedPart
 		}
 	}
 

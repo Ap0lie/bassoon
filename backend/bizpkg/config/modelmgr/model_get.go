@@ -30,6 +30,23 @@ import (
 	"github.com/coze-dev/coze-studio/backend/pkg/logs"
 )
 
+const (
+	moonshotKimiK26BaseURL = "https://api.moonshot.cn/v1"
+	moonshotKimiK26Model   = "kimi-k2.6"
+)
+
+func normalizeMoonshotKimiK26Connection(conn *config.Connection) bool {
+	if conn == nil || conn.BaseConnInfo == nil || conn.BaseConnInfo.Model != moonshotKimiK26Model {
+		return false
+	}
+
+	// This also repairs records created before the endpoint constraint was
+	// enforced at write time. The connection stays in memory only; no stored
+	// credential or unrelated record is modified here.
+	conn.BaseConnInfo.BaseURL = moonshotKimiK26BaseURL
+	return true
+}
+
 func (c *ModelConfig) GetProviderModelList(ctx context.Context) ([]*config.ProviderModelList, error) {
 	modelProviderList := getModelProviderList()
 	res := make([]*config.ProviderModelList, 0, len(modelProviderList))
@@ -229,6 +246,8 @@ func (c *ModelConfig) toModel(ctx context.Context, q *model.ModelInstance) *Mode
 		logs.CtxWarnf(ctx, "unmarshal model extra (%s) failed, err: %v", q.Extra, err)
 	}
 
+	isMoonshotKimiK26 := normalizeMoonshotKimiK26Connection(conn)
+
 	m := &Model{
 		Model: &config.Model{
 			ID:              q.ID,
@@ -238,7 +257,9 @@ func (c *ModelConfig) toModel(ctx context.Context, q *model.ModelInstance) *Mode
 			Type:            config.ModelType(q.Type),
 			Capability:      q.Capability,
 			Parameters:      q.Parameters,
-			EnableBase64URL: extra.EnableBase64URL,
+			// Older records may have been stored before K2.6's multimodal input
+			// constraint was known. Force the safe path when reading them too.
+			EnableBase64URL: extra.EnableBase64URL || isMoonshotKimiK26,
 			DeleteAtMs:      q.DeletedAt.Time.UnixMilli(),
 		},
 	}

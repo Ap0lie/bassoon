@@ -886,6 +886,46 @@
                     }
                 ]
             },
+            "kimi-k2.6": {
+                "display_info": {
+                    "name": "Kimi K2.6",
+                    "description": {
+                        "zh_cn": "Moonshot Kimi K2.6（256K 上下文，多模态，支持思考模式）",
+                        "en_us": "Moonshot Kimi K2.6 (256K context, multimodal, thinking supported)"
+                    },
+                    "output_tokens": 32768,
+                    "max_tokens": 262144
+                },
+                "capability": {
+                    "cot_display": true,
+                    "function_call": true,
+                    "image_understanding": true,
+                    "video_understanding": true,
+                    "audio_understanding": false,
+                    "support_multi_modal": true,
+                    "prefill_resp": false
+                },
+                "enable_base64_url": true,
+                "parameters": [
+                    {
+                        "name": "max_tokens",
+                        "label": "Response max length",
+                        "desc": "Maximum visible and reasoning output tokens for Moonshot Kimi K2.6.",
+                        "type": 2,
+                        "min": "16000",
+                        "max": "32768",
+                        "precision": 0,
+                        "default_val": {
+                            "default_val": "32768"
+                        },
+                        "options": [],
+                        "param_class": {
+                            "class_id": 2,
+                            "label": "Input and output settings"
+                        }
+                    }
+                ]
+            },
             "gpt-3.5-turbo-0125": {
                 "display_info": {
                     "name": "GPT-3.5 Turbo 0125",

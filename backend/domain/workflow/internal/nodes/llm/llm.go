@@ -382,6 +382,30 @@ func getReasoningContent(message *schema.Message) string {
 	return message.ReasoningContent
 }
 
+func (c *Config) modelBuilderParams(params *vo.LLMParams) *modelbuilder.LLMParams {
+	modelParams := params.ToModelBuilderLLMParams()
+	if c.requiresThinkingDisabledForTools() {
+		modelParams.EnableThinking = ptr.Of(false)
+	}
+
+	return modelParams
+}
+
+func (c *Config) requiresThinkingDisabledForTools() bool {
+	if c.FCParam == nil {
+		return false
+	}
+
+	if c.FCParam.WorkflowFCParam != nil && len(c.FCParam.WorkflowFCParam.WorkflowList) > 0 {
+		return true
+	}
+	if c.FCParam.PluginFCParam != nil && len(c.FCParam.PluginFCParam.PluginList) > 0 {
+		return true
+	}
+
+	return c.FCParam.KnowledgeFCParam != nil && len(c.FCParam.KnowledgeFCParam.KnowledgeList) > 0
+}
+
 func (c *Config) Build(ctx context.Context, ns *schema2.NodeSchema, _ ...schema2.BuildOption) (any, error) {
 	var (
 		err                   error
@@ -393,7 +417,7 @@ func (c *Config) Build(ctx context.Context, ns *schema2.NodeSchema, _ ...schema2
 		knowledgeRecallConfig *KnowledgeRecallConfig
 	)
 
-	chatModel, info, err = modelbuilder.BuildModelByID(ctx, c.LLMParams.ModelType, c.LLMParams.ToModelBuilderLLMParams())
+	chatModel, info, err = modelbuilder.BuildModelByID(ctx, c.LLMParams.ModelType, c.modelBuilderParams(c.LLMParams))
 	if err != nil {
 		return nil, err
 	}
@@ -402,7 +426,7 @@ func (c *Config) Build(ctx context.Context, ns *schema2.NodeSchema, _ ...schema2
 	if exceptionConf != nil && exceptionConf.MaxRetry > 0 {
 		backupModelParams := c.BackupLLMParams
 		if backupModelParams != nil {
-			fallbackM, fallbackI, err = modelbuilder.BuildModelByID(ctx, backupModelParams.ModelType, backupModelParams.ToModelBuilderLLMParams())
+			fallbackM, fallbackI, err = modelbuilder.BuildModelByID(ctx, backupModelParams.ModelType, c.modelBuilderParams(backupModelParams))
 			if err != nil {
 				return nil, err
 			}

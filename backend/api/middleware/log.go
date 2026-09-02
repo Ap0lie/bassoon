@@ -64,6 +64,9 @@ func AccessLogMW() app.HandlerFunc {
 			urlQuery := ctx.Request.URI().QueryString()
 			reqBody := bytesToString(ctx.Request.Body())
 			respBody := bytesToString(ctx.Response.Body())
+			if strings.Contains(path, "/passport/") || strings.Contains(path, "/admin/config/model/") {
+				reqBody = "[redacted]"
+			}
 			maxPrintLen := 3 * 1024
 			if len(respBody) > maxPrintLen {
 				respBody = respBody[:maxPrintLen]

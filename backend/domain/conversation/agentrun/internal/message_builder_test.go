@@ -18,6 +18,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -28,9 +29,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
+	message "github.com/coze-dev/coze-studio/backend/crossdomain/message/model"
 	"github.com/coze-dev/coze-studio/backend/infra/imagex"
 	mockImagex "github.com/coze-dev/coze-studio/backend/internal/mock/infra/imagex"
 )
+
+func TestTransMessageToSchemaMessagePreservesReasoningContent(t *testing.T) {
+	storedMessage, err := json.Marshal(&schema.Message{
+		Role:             schema.Assistant,
+		Content:          "tool call request",
+		ReasoningContent: "original reasoning content",
+	})
+	assert.NoError(t, err)
+
+	result := transMessageToSchemaMessage(context.Background(), []*message.Message{{
+		ModelContent: string(storedMessage),
+	}}, nil)
+
+	if assert.Len(t, result, 1) {
+		assert.Equal(t, "original reasoning content", result[0].ReasoningContent)
+	}
+}
 
 func TestParseMessageURI(t *testing.T) {
 

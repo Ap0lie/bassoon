@@ -477,9 +477,8 @@ func transMessageToSchemaMessage(ctx context.Context, msgs []*message.Message, i
 		if err != nil {
 			continue
 		}
-		if len(sm.ReasoningContent) > 0 {
-			sm.ReasoningContent = ""
-		}
+		// Keep the original reasoning content when replaying an assistant turn.
+		// Moonshot requires it to be sent back unchanged before the next tool call.
 		schemaMessage = append(schemaMessage, parseMessageURI(ctx, sm, imagexClient))
 	}
 

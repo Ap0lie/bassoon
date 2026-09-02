@@ -19,7 +19,9 @@ package agentflow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -179,19 +181,30 @@ func (r *AgentRunner) processWfMidAnswerStream(_ context.Context, sw *schema.Str
 	}
 }
 
-func (r *AgentRunner) PreHandlerReq(ctx context.Context, req *AgentRequest) *AgentRequest {
-	req.Input = r.preHandlerInput(req.Input)
-	req.History = r.preHandlerHistory(req.History)
+func (r *AgentRunner) PreHandlerReq(ctx context.Context, req *AgentRequest) (*AgentRequest, error) {
+	input, err := r.preHandlerInput(req.Input)
+	if err != nil {
+		return nil, err
+	}
+	history, err := r.preHandlerHistory(req.History)
+	if err != nil {
+		return nil, err
+	}
+	req.Input = input
+	req.History = history
 	logs.CtxInfof(ctx, "[AgentRunner] PreHandlerReq, req: %v", conv.DebugJsonToStr(req))
 
-	return req
+	return req, nil
 }
 
-func (r *AgentRunner) preHandlerInput(input *schema.Message) *schema.Message {
+func (r *AgentRunner) preHandlerInput(input *schema.Message) (*schema.Message, error) {
+	if input == nil {
+		return nil, nil
+	}
 	var multiContent []schema.ChatMessagePart
 
 	if len(input.MultiContent) == 0 {
-		return input
+		return input, nil
 	}
 
 	unSupportMultiPart := make([]schema.ChatMessagePart, 0, len(input.MultiContent))
@@ -202,7 +215,11 @@ func (r *AgentRunner) preHandlerInput(input *schema.Message) *schema.Message {
 			if !r.isSupportImage() {
 				unSupportMultiPart = append(unSupportMultiPart, v)
 			} else {
-				v.ImageURL = transImageURLToBase64(v.ImageURL, r.enableLocalFileToLLMWithBase64())
+				imageURL, err := transImageURLToBase64(v.ImageURL, r.enableLocalFileToLLMWithBase64())
+				if err != nil {
+					return nil, err
+				}
+				v.ImageURL = imageURL
 				multiContent = append(multiContent, v)
 			}
 		case schema.ChatMessagePartTypeFileURL:
@@ -223,7 +240,11 @@ func (r *AgentRunner) preHandlerInput(input *schema.Message) *schema.Message {
 			if !r.isSupportVideo() {
 				unSupportMultiPart = append(unSupportMultiPart, v)
 			} else {
-				v.VideoURL = transVideoURLToBase64(v.VideoURL, r.enableLocalFileToLLMWithBase64())
+				videoURL, err := transVideoURLToBase64(v.VideoURL, r.enableLocalFileToLLMWithBase64())
+				if err != nil {
+					return nil, err
+				}
+				v.VideoURL = videoURL
 				multiContent = append(multiContent, v)
 			}
 		case schema.ChatMessagePartTypeText:
@@ -250,7 +271,7 @@ func (r *AgentRunner) preHandlerInput(input *schema.Message) *schema.Message {
 
 	}
 	input.MultiContent = multiContent
-	return input
+	return input, nil
 }
 func concatContentString(textContent string, unSupportTypeURL []schema.ChatMessagePart) string {
 	if len(unSupportTypeURL) == 0 {
@@ -272,15 +293,19 @@ func concatContentString(textContent string, unSupportTypeURL []schema.ChatMessa
 	return textContent
 }
 
-func (r *AgentRunner) preHandlerHistory(history []*schema.Message) []*schema.Message {
+func (r *AgentRunner) preHandlerHistory(history []*schema.Message) ([]*schema.Message, error) {
 	var hm []*schema.Message
 	for _, msg := range history {
 		if msg.Role == schema.User {
-			msg = r.preHandlerInput(msg)
+			var err error
+			msg, err = r.preHandlerInput(msg)
+			if err != nil {
+				return nil, err
+			}
 		}
 		hm = append(hm, msg)
 	}
-	return hm
+	return hm, nil
 }
 
 func (r *AgentRunner) isSupportMultiContent() bool {
@@ -303,17 +328,20 @@ func (r *AgentRunner) enableLocalFileToLLMWithBase64() bool {
 	return r.modelInfo.EnableBase64URL
 }
 
-func transImageURLToBase64(imageUrl *schema.ChatMessageImageURL, enableBase64Url bool) *schema.ChatMessageImageURL {
-	if !enableBase64Url {
-		return imageUrl
+func transImageURLToBase64(imageURL *schema.ChatMessageImageURL, enableBase64URL bool) (*schema.ChatMessageImageURL, error) {
+	if imageURL == nil {
+		return nil, fmt.Errorf("image URL is required")
 	}
-	fileData, err := urltobase64url.URLToBase64(imageUrl.URL)
+	if !enableBase64URL || isSupportedDirectMediaReference(imageURL.URL) {
+		return imageURL, nil
+	}
+	fileData, err := urltobase64url.URLToBase64(imageURL.URL)
 	if err != nil {
-		return imageUrl
+		return nil, fmt.Errorf("convert image URL to base64: %w", err)
 	}
-	imageUrl.URL = fileData.Base64Url
-	imageUrl.MIMEType = fileData.MimeType
-	return imageUrl
+	imageURL.URL = fileData.Base64Url
+	imageURL.MIMEType = fileData.MimeType
+	return imageURL, nil
 }
 
 func transFileURLToBase64(fileUrl *schema.ChatMessageFileURL, enableBase64Url bool) *schema.ChatMessageFileURL {
@@ -344,16 +372,29 @@ func transAudioURLToBase64(audioUrl *schema.ChatMessageAudioURL, enableBase64Url
 	return audioUrl
 }
 
-func transVideoURLToBase64(videoUrl *schema.ChatMessageVideoURL, enableBase64Url bool) *schema.ChatMessageVideoURL {
-
-	if !enableBase64Url {
-		return videoUrl
+func transVideoURLToBase64(videoURL *schema.ChatMessageVideoURL, enableBase64URL bool) (*schema.ChatMessageVideoURL, error) {
+	if videoURL == nil {
+		return nil, fmt.Errorf("video URL is required")
 	}
-	fileData, err := urltobase64url.URLToBase64(videoUrl.URL)
+	if !enableBase64URL || isSupportedDirectMediaReference(videoURL.URL) {
+		return videoURL, nil
+	}
+	fileData, err := urltobase64url.URLToBase64(videoURL.URL)
 	if err != nil {
-		return videoUrl
+		return nil, fmt.Errorf("convert video URL to base64: %w", err)
 	}
-	videoUrl.URL = fileData.Base64Url
-	videoUrl.MIMEType = fileData.MimeType
-	return videoUrl
+	videoURL.URL = fileData.Base64Url
+	videoURL.MIMEType = fileData.MimeType
+	return videoURL, nil
+}
+
+func isSupportedDirectMediaReference(rawURL string) bool {
+	url := strings.TrimSpace(rawURL)
+	lowerURL := strings.ToLower(url)
+	if strings.HasPrefix(lowerURL, "data:") && strings.Contains(lowerURL, ";base64,") {
+		return true
+	}
+
+	const msFilePrefix = "ms://"
+	return strings.HasPrefix(url, msFilePrefix) && len(url) > len(msFilePrefix)
 }

@@ -38,6 +38,7 @@ import (
 	"github.com/coze-dev/coze-studio/backend/domain/workflow/internal/nodes"
 	schema2 "github.com/coze-dev/coze-studio/backend/domain/workflow/internal/schema"
 	"github.com/coze-dev/coze-studio/backend/pkg/ctxcache"
+	"github.com/coze-dev/coze-studio/backend/pkg/lang/ptr"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/ternary"
 	"github.com/coze-dev/coze-studio/backend/pkg/logs"
 	"github.com/coze-dev/coze-studio/backend/pkg/sonic"
@@ -49,6 +50,14 @@ type Config struct {
 	IsFastMode         bool
 	LLMParams          *vo.LLMParams
 	ChatHistorySetting *vo.ChatHistorySetting
+}
+
+func (c *Config) modelBuilderParams() *modelbuilder.LLMParams {
+	params := c.LLMParams.ToModelBuilderLLMParams()
+	// Intent detection is an immediate classification chain; it never needs
+	// model reasoning output and must remain compatible with K2.6.
+	params.EnableThinking = ptr.Of(false)
+	return params
 }
 
 func (c *Config) Adapt(_ context.Context, n *vo.Node, _ ...nodes.AdaptOption) (*schema2.NodeSchema, error) {
@@ -126,7 +135,7 @@ func (c *Config) Build(ctx context.Context, _ *schema2.NodeSchema, _ ...schema2.
 		return nil, errors.New("config intents is required")
 	}
 
-	m, _, err := modelbuilder.BuildModelByID(ctx, c.LLMParams.ModelType, c.LLMParams.ToModelBuilderLLMParams())
+	m, _, err := modelbuilder.BuildModelByID(ctx, c.LLMParams.ModelType, c.modelBuilderParams())
 	if err != nil {
 		return nil, err
 	}

@@ -16,7 +16,10 @@
 
 package modelbuilder
 
-import "github.com/coze-dev/coze-studio/backend/api/model/app/bot_common"
+import (
+	"github.com/coze-dev/coze-studio/backend/api/model/app/bot_common"
+	"github.com/coze-dev/coze-studio/backend/pkg/lang/ptr"
+)
 
 type LLMParams struct {
 	Temperature      *float32                       `json:"temperature"`
@@ -64,4 +67,16 @@ func newLLMParamsWithSettings(appSettings *bot_common.ModelInfo) *LLMParams {
 	}
 
 	return l
+}
+
+// withThinking returns params with an explicit thinking setting. Callers that
+// create tool-capable or internal RAG models use this so providers that support
+// thinking can emit a tool-compatible request.
+func withThinking(params *LLMParams, enabled bool) *LLMParams {
+	if params == nil {
+		params = &LLMParams{}
+	}
+
+	params.EnableThinking = ptr.Of(enabled)
+	return params
 }

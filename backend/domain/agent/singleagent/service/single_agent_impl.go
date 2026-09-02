@@ -124,7 +124,11 @@ func (s *singleAgentImpl) StreamExecute(ctx context.Context, req *entity.Execute
 		ResumeInfo:   req.ResumeInfo,
 		PreCallTools: req.PreCallTools,
 	}
-	return rn.StreamExecute(ctx, rn.PreHandlerReq(ctx, exeReq))
+	preparedReq, err := rn.PreHandlerReq(ctx, exeReq)
+	if err != nil {
+		return nil, err
+	}
+	return rn.StreamExecute(ctx, preparedReq)
 }
 
 func (s *singleAgentImpl) GetSingleAgent(ctx context.Context, agentID int64, version string) (botInfo *entity.SingleAgent, err error) {

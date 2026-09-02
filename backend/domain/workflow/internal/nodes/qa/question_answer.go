@@ -176,6 +176,7 @@ func convertLLMParams(params vo.SimpleLLMParam) (*vo.LLMParams, error) {
 	p.Temperature = &params.Temperature
 	p.MaxTokens = params.MaxTokens
 	p.TopP = &params.TopP
+	p.EnableThinking = ptr.Of(false)
 	p.ResponseFormat = params.ResponseFormat
 	p.SystemPrompt = params.SystemPrompt
 	return p, nil

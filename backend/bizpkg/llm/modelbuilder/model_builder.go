@@ -81,6 +81,13 @@ func BuildModelWithConf(ctx context.Context, m *modelmgr.Model) (bcm ToolCalling
 	return buildModelWithConfParams(ctx, m, nil)
 }
 
+// BuildModelWithThinking builds a configured model with an explicit thinking
+// setting. Internal RAG and tool-calling chains use disabled thinking because
+// Moonshot K2.6 only permits those chains with thinking disabled.
+func BuildModelWithThinking(ctx context.Context, m *modelmgr.Model, enableThinking bool) (bcm ToolCallingChatModel, err error) {
+	return buildModelWithConfParams(ctx, m, withThinking(nil, enableThinking))
+}
+
 func BuildModelByID(ctx context.Context, modelID int64, params *LLMParams) (bcm ToolCallingChatModel, info *modelmgr.Model, err error) {
 	m, err := bizConf.ModelConf().GetModelByID(ctx, modelID)
 	if err != nil {
@@ -96,6 +103,17 @@ func BuildModelByID(ctx context.Context, modelID int64, params *LLMParams) (bcm 
 }
 
 func BuildModelBySettings(ctx context.Context, appSettings *bot_common.ModelInfo) (bcm ToolCallingChatModel, info *modelmgr.Model, err error) {
+	return buildModelBySettings(ctx, appSettings, newLLMParamsWithSettings(appSettings))
+}
+
+// BuildModelBySettingsWithThinking builds a model selected by app settings
+// with an explicit thinking setting. Agent turns use disabled thinking so
+// tool calls remain valid for Moonshot K2.6.
+func BuildModelBySettingsWithThinking(ctx context.Context, appSettings *bot_common.ModelInfo, enableThinking bool) (bcm ToolCallingChatModel, info *modelmgr.Model, err error) {
+	return buildModelBySettings(ctx, appSettings, withThinking(newLLMParamsWithSettings(appSettings), enableThinking))
+}
+
+func buildModelBySettings(ctx context.Context, appSettings *bot_common.ModelInfo, params *LLMParams) (bcm ToolCallingChatModel, info *modelmgr.Model, err error) {
 	if appSettings == nil {
 		return nil, nil, fmt.Errorf("model settings is nil")
 	}
@@ -104,8 +122,6 @@ func BuildModelBySettings(ctx context.Context, appSettings *bot_common.ModelInfo
 		logs.CtxDebugf(ctx, "model id is nil, app settings: %v", conv.DebugJsonToStr(appSettings))
 		return nil, nil, fmt.Errorf("model id is nil")
 	}
-
-	params := newLLMParamsWithSettings(appSettings)
 
 	return BuildModelByID(ctx, *appSettings.ModelId, params)
 }

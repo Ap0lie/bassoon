@@ -43,7 +43,10 @@ func GetBuiltinChatModel(ctx context.Context, envPrefix string) (bcm BaseChatMod
 
 	model, err := config.ModelConf().GetBuiltinChatModelConfig(ctx, knowledgeConf.BuiltinModelID)
 	if err == nil {
-		bcm, err = BuildModelWithConf(ctx, model)
+		// Built-in models serve the knowledge-recall and other immediate RAG
+		// chains. Keep thinking disabled so a Moonshot K2.6 configuration
+		// produces a tool-compatible request.
+		bcm, err = BuildModelWithThinking(ctx, model, false)
 		if err == nil {
 			ctxcache.Store(ctx, ctxCacheKey, bcm)
 			return bcm, true, nil
@@ -58,7 +61,7 @@ func GetBuiltinChatModel(ctx context.Context, envPrefix string) (bcm BaseChatMod
 	}
 
 	for _, m := range modelList {
-		bcm, err = BuildModelWithConf(ctx, m)
+		bcm, err = BuildModelWithThinking(ctx, m, false)
 		if err != nil {
 			logs.CtxWarnf(ctx, "build model %v %v failed: %v", m.Provider.Name, m.Provider.ModelClass.String(), err)
 			continue

@@ -32,6 +32,7 @@ type LLMParams struct {
 	MaxTokens         int            `json:"maxTokens"`
 	TopP              *float64       `json:"topP"`
 	TopK              *int           `json:"topK"`
+	EnableThinking    *bool          `json:"-"`
 	EnableChatHistory bool           `json:"enableChatHistory"`
 	SystemPrompt      string         `json:"systemPrompt"`
 	ResponseFormat    ResponseFormat `json:"responseFormat"`
@@ -61,6 +62,9 @@ func (l *LLMParams) ToModelBuilderLLMParams() *modelbuilder.LLMParams {
 	}
 	if l.TopK != nil {
 		m.TopK = ptr.Of(int32(ptr.From(l.TopK)))
+	}
+	if l.EnableThinking != nil {
+		m.EnableThinking = ptr.Of(ptr.From(l.EnableThinking))
 	}
 
 	switch l.ResponseFormat {
